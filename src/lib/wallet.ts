@@ -122,9 +122,8 @@ export function formatAddress(address: string): string {
 }
 
 // 解析金额 (USDC有6位小数)
-export function parseUSDC(amount: string): bigint {
-    console.log('Parsing USDC amount:', amount);
-  return ethers.parseUnits('1', 6);
+export function parseUSDC(amount: number): bigint {
+  return ethers.parseUnits(amount.toString(), 6);
 }
 
 // 格式化金额显示

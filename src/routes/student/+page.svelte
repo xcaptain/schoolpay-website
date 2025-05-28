@@ -3,9 +3,9 @@
   import { isConnected, signer, getEscrowContract, getUSDCContract, parseUSDC, walletAddress, checkWalletAddress, switchToActiveWallet } from '$lib/wallet';
   import { ethers } from 'ethers';
 
-  let amount = $state('');
+  let amount: number = $state(0);
   let invoiceRef = $state('');
-  let universityAddress = $state('');
+  let universityAddress = $state('0x720aC46FdB6da28FA751bc60AfB8094290c2B4b7');
   let loading = $state(false);
   let success = $state('');
   let error = $state('');
