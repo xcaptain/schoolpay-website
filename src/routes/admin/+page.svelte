@@ -149,12 +149,6 @@
 
       // 获取所有Deposited事件中的发票编号
       const depositedEvents = await contract.queryFilter('Deposited');
-      depositedEvents.forEach(event => {
-        // 确保这是一个 EventLog 而不是 Log
-        if ('args' in event && event.args?.[0]) {
-          knownInvoiceRefs.add(event.args[0]);
-        }
-      });
 
       // 为所有已知的发票编号获取当前状态
       const escrowPromises = Array.from(knownInvoiceRefs).map(async (invoiceRef) => {
@@ -446,7 +440,7 @@
                     </td>
                     <td>
                       <div class="flex gap-2">
-                        {#if escrow.status === 1}
+                        {#if escrow.status == 1}
                           <!-- 已存款状态，可以释放或退款 -->
                           <button 
                             class="btn btn-success btn-sm"
