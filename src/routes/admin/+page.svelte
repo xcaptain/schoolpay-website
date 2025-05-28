@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { isConnected, signer, provider, getEscrowContract, formatUSDC, formatAddress, CONTRACT_ADDRESS } from '$lib/wallet';
+  import { isConnected, signer, provider, getEscrowContract, formatUSDC, formatAddress, CONTRACT_ADDRESS, parseUSDC } from '$lib/wallet';
   import { ethers } from 'ethers';
 
   interface EscrowItem {
@@ -12,37 +12,120 @@
     txHash?: string;
   }
 
-  let escrows = $state<EscrowItem[]>([
-    {
-        invoiceRef: 'voice1',
-        payer: '0xD226eb79Bfa519b51DADB9AA9Eab2E4357170B43',
-        university: '0x720aC46FdB6da28FA751bc60AfB8094290c2B4b7',
-        amount: BigInt(1000000), // 1 USDC
-        status: 1, // DEPOSITED
-        txHash: ''
-    }
-  ]);
+  let escrows = $state<EscrowItem[]>([]);
   let loading = $state(false);
   let error = $state('');
   let success = $state('');
   let processingInvoice = $state('');
 
+  // 表单状态
+  let formData = $state({
+    payerAddress: '0xD226eb79Bfa519b51DADB9AA9Eab2E4357170B43',
+    universityAddress: '0x720aC46FdB6da28FA751bc60AfB8094290c2B4b7',
+    amount: '',
+    invoiceRef: ''
+  });
+  let isSubmitting = $state(false);
+  let formError = $state('');
+  
+  // 本地存储的已知发票编号列表（包括刚创建的）
+  let knownInvoiceRefs = $state(new Set<string>());
+
   // 状态枚举
-  const EscrowStatus = {
+  const EscrowStatus: { [key: number]: string } = {
     0: 'PENDING',
     1: 'DEPOSITED', 
     2: 'RELEASED',
     3: 'REFUNDED'
   };
 
-  const StatusColors = {
+  const StatusColors: { [key: number]: string } = {
     0: 'badge-warning',
     1: 'badge-info',
     2: 'badge-success', 
     3: 'badge-error'
   };
 
+  // localStorage 相关函数
+  const ESCROWS_STORAGE_KEY = 'admin_escrows_data';
+  const KNOWN_INVOICES_STORAGE_KEY = 'admin_known_invoices';
+
+  function saveEscrowsToStorage(escrowsData: EscrowItem[]) {
+    try {
+        console.log('saveEscrowsToStorage:', escrowsData);
+      localStorage.setItem(ESCROWS_STORAGE_KEY, JSON.stringify(escrowsData.map(e => ({
+        ...e,
+        status: e.status.toString(),
+        amount: e.amount.toString()
+      }))));
+    } catch (err) {
+      console.error('保存托管数据到本地存储失败:', err);
+    }
+  }
+
+  function loadEscrowsFromStorage(): EscrowItem[] {
+    try {
+      const stored = localStorage.getItem(ESCROWS_STORAGE_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        return parsed.map((e: any) => ({
+          ...e,
+          amount: BigInt(e.amount), // 将字符串转换回 BigInt
+          status: parseInt(e.status, 10) // 将字符串转换回 BigInt
+        }));
+      }
+    } catch (err) {
+      console.error('从本地存储加载托管数据失败:', err);
+    }
+    return [];
+  }
+
+  function saveKnownInvoicesToStorage(invoices: Set<string>) {
+    try {
+      localStorage.setItem(KNOWN_INVOICES_STORAGE_KEY, JSON.stringify(Array.from(invoices)));
+    } catch (err) {
+      console.error('保存已知发票列表到本地存储失败:', err);
+    }
+  }
+
+  function loadKnownInvoicesFromStorage(): Set<string> {
+    try {
+      const stored = localStorage.getItem(KNOWN_INVOICES_STORAGE_KEY);
+      if (stored) {
+        return new Set(JSON.parse(stored));
+      }
+    } catch (err) {
+      console.error('从本地存储加载已知发票列表失败:', err);
+    }
+    return new Set();
+  }
+
+  function clearLocalStorage() {
+    try {
+      localStorage.removeItem(ESCROWS_STORAGE_KEY);
+      localStorage.removeItem(KNOWN_INVOICES_STORAGE_KEY);
+      escrows = [];
+      knownInvoiceRefs = new Set();
+      success = '本地缓存已清除';
+    } catch (err) {
+      console.error('清除本地存储失败:', err);
+      error = '清除缓存失败';
+    }
+  }
+
   onMount(() => {
+    // 先从本地存储加载数据
+    const cachedEscrows = loadEscrowsFromStorage();
+    const cachedInvoices = loadKnownInvoicesFromStorage();
+    
+    if (cachedEscrows.length > 0) {
+      escrows = cachedEscrows;
+    }
+    if (cachedInvoices.size > 0) {
+      knownInvoiceRefs = cachedInvoices;
+    }
+    
+    // 如果已连接钱包，则尝试更新数据
     if ($isConnected) {
       loadEscrows();
     }
@@ -56,7 +139,7 @@
 
     try {
       const contract = new ethers.Contract(
-        CONTRACT_ADDRESS, // 使用导入的合约地址
+        CONTRACT_ADDRESS,
         [
           'event Deposited(string indexed invoiceRef, address indexed payer, address indexed university, uint256 amount)',
           'function getEscrowInfo(string calldata invoiceRef) external view returns (tuple(address payer, address university, uint256 amount, string invoiceRef, uint8 status))'
@@ -64,22 +147,34 @@
         $provider
       );
 
-      // 获取所有Deposited事件
+      // 获取所有Deposited事件中的发票编号
       const depositedEvents = await contract.queryFilter('Deposited');
-      
-      const escrowPromises = depositedEvents.map(async (event) => {
-        const invoiceRef = event.args?.[0];
-        if (!invoiceRef) return null;
+      depositedEvents.forEach(event => {
+        // 确保这是一个 EventLog 而不是 Log
+        if ('args' in event && event.args?.[0]) {
+          knownInvoiceRefs.add(event.args[0]);
+        }
+      });
 
+      // 为所有已知的发票编号获取当前状态
+      const escrowPromises = Array.from(knownInvoiceRefs).map(async (invoiceRef) => {
         try {
+            console.log(`正在获取托管信息: ${invoiceRef}`);
           const escrowInfo = await contract.getEscrowInfo(invoiceRef);
+
+          console.log(`获取托管信息: ${invoiceRef}`, escrowInfo);
+          
+          // 查找对应的交易哈希
+          const depositedEvent = depositedEvents.find(e => 'args' in e && e.args?.[0] === invoiceRef);
+          const txHash = depositedEvent?.transactionHash || '';
+          
           return {
             invoiceRef,
             payer: escrowInfo[0],
             university: escrowInfo[1], 
             amount: escrowInfo[2],
             status: escrowInfo[4],
-            txHash: event.transactionHash
+            txHash
           };
         } catch (err) {
           console.error(`获取托管信息失败 ${invoiceRef}:`, err);
@@ -89,6 +184,12 @@
 
       const results = await Promise.all(escrowPromises);
       escrows = results.filter(Boolean) as EscrowItem[];
+
+      console.log('加载的托管数据:', escrows);
+      
+      // 保存到本地存储
+      saveEscrowsToStorage(escrows);
+      saveKnownInvoicesToStorage(knownInvoiceRefs);
       
     } catch (err: any) {
       console.error('加载托管列表失败:', err);
@@ -157,6 +258,82 @@
   function clearMessages() {
     error = '';
     success = '';
+    formError = '';
+  }
+
+  async function handleInitialize() {
+    if (!$signer) {
+      formError = '请先连接钱包';
+      return;
+    }
+
+    // 验证表单数据
+    if (!formData.payerAddress || !formData.universityAddress || !formData.amount || !formData.invoiceRef) {
+      formError = '请填写所有必填字段';
+      return;
+    }
+
+    // 验证地址格式
+    if (!ethers.isAddress(formData.payerAddress)) {
+      formError = '付款人地址格式不正确';
+      return;
+    }
+
+    if (!ethers.isAddress(formData.universityAddress)) {
+      formError = '大学地址格式不正确';
+      return;
+    }
+
+    // 验证金额
+    const amount = parseFloat(formData.amount);
+    if (isNaN(amount) || amount <= 0) {
+      formError = '请输入有效的金额';
+      return;
+    }
+
+    isSubmitting = true;
+    formError = '';
+    error = '';
+    success = '';
+
+    try {
+      const contract = getEscrowContract($signer);
+      const amountInWei = parseUSDC(amount);
+      
+      const tx = await contract.initialize(
+        formData.payerAddress,
+        formData.universityAddress,
+        amountInWei,
+        formData.invoiceRef
+      );
+      
+      await tx.wait();
+      
+      success = `成功初始化托管交易！交易哈希: ${tx.hash}`;
+      
+      // 将新的发票编号添加到已知列表中
+      knownInvoiceRefs.add(formData.invoiceRef);
+      
+      // 保存到本地存储
+      saveKnownInvoicesToStorage(knownInvoiceRefs);
+      
+      // 清空表单
+      formData = {
+        payerAddress: '',
+        universityAddress: '',
+        amount: '',
+        invoiceRef: ''
+      };
+      
+      // 重新加载数据
+      await loadEscrows();
+      
+    } catch (err: any) {
+      console.error('初始化托管交易失败:', err);
+      formError = '初始化失败：' + (err.message || '未知错误');
+    } finally {
+      isSubmitting = false;
+    }
   }
 </script>
 
@@ -178,14 +355,22 @@
       <div class="card-body">
         <div class="flex justify-between items-center mb-4">
           <h2 class="card-title">托管交易列表</h2>
-          <button 
-            class="btn btn-outline btn-sm" 
-            class:loading={loading}
-            onclick={loadEscrows}
-            disabled={loading}
-          >
-            {loading ? '加载中...' : '刷新'}
-          </button>
+          <div class="flex gap-2">
+            <button 
+              class="btn btn-outline btn-sm" 
+              class:loading={loading}
+              onclick={loadEscrows}
+              disabled={loading}
+            >
+              {loading ? '刷新中...' : '🔄 刷新'}
+            </button>
+            <button 
+              class="btn btn-error btn-sm" 
+              onclick={clearLocalStorage}
+            >
+              🗑️ 清除缓存
+            </button>
+          </div>
         </div>
 
         {#if error}
@@ -297,7 +482,7 @@
     <div class="mt-8">
       <div class="bg-base-100 rounded-lg p-6">
         <h3 class="text-lg font-semibold mb-4">📋 状态说明</h3>
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm mb-4">
           <div class="flex items-center gap-2">
             <div class="badge badge-warning">PENDING</div>
             <span>等待学生存款</span>
@@ -313,6 +498,125 @@
           <div class="flex items-center gap-2">
             <div class="badge badge-error">REFUNDED</div>
             <span>已退款给学生</span>
+          </div>
+        </div>
+        
+        <div class="divider"></div>
+        
+        <div class="mt-4">
+          <h4 class="font-semibold mb-2">💾 本地缓存说明：</h4>
+          <ul class="text-sm space-y-1 text-gray-600">
+            <li>• 交易数据会自动保存到浏览器本地存储</li>
+            <li>• 页面刷新后会自动加载缓存的数据</li>
+            <li>• 点击"清除缓存"按钮可以清空所有本地数据</li>
+            <li>• 缓存包括已初始化的订单和链上查询的交易状态</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- 新增初始化托管交易表单 -->
+    <div class="mt-8">
+      <div class="card bg-base-100 shadow-xl">
+        <div class="card-body">
+          <h2 class="card-title">🆕 初始化新的托管交易</h2>
+          <p class="text-gray-600 mb-4">为学生创建一个新的学费支付托管交易</p>
+          
+          {#if formError}
+            <div class="alert alert-error mb-4">
+              <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span>{formError}</span>
+            </div>
+          {/if}
+
+          <form onsubmit={(e) => { e.preventDefault(); handleInitialize(); }} class="space-y-4">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div class="form-control">
+                <label class="label" for="invoiceRef">
+                  <span class="label-text">发票编号 *</span>
+                </label>
+                <input 
+                  id="invoiceRef"
+                  type="text" 
+                  placeholder="例如: INV2024001" 
+                  class="input input-bordered" 
+                  bind:value={formData.invoiceRef}
+                  disabled={isSubmitting}
+                  required
+                />
+              </div>
+              
+              <div class="form-control">
+                <label class="label" for="amount">
+                  <span class="label-text">金额 (USDC) *</span>
+                </label>
+                <input 
+                  id="amount"
+                  type="number" 
+                  step="0.01"
+                  min="0"
+                  placeholder="例如: 1000.00" 
+                  class="input input-bordered" 
+                  bind:value={formData.amount}
+                  disabled={isSubmitting}
+                  required
+                />
+              </div>
+            </div>
+
+            <div class="form-control">
+              <label class="label" for="payerAddress">
+                <span class="label-text">付款人地址 (学生钱包地址) *</span>
+              </label>
+              <input 
+                id="payerAddress"
+                type="text" 
+                placeholder="0x..." 
+                class="input input-bordered font-mono" 
+                bind:value={formData.payerAddress}
+                disabled={isSubmitting}
+                required
+              />
+            </div>
+
+            <div class="form-control">
+              <label class="label" for="universityAddress">
+                <span class="label-text">大学地址 (接收方钱包地址) *</span>
+              </label>
+              <input 
+                id="universityAddress"
+                type="text" 
+                placeholder="0x..." 
+                class="input input-bordered font-mono" 
+                bind:value={formData.universityAddress}
+                disabled={isSubmitting}
+                required
+              />
+            </div>
+
+            <div class="form-control mt-6">
+              <button 
+                type="submit" 
+                class="btn btn-primary"
+                class:loading={isSubmitting}
+                disabled={isSubmitting}
+              >
+                {isSubmitting ? '初始化中...' : '🚀 初始化托管交易'}
+              </button>
+            </div>
+          </form>
+
+          <div class="mt-4 p-4 bg-base-200 rounded-lg">
+            <h4 class="font-semibold mb-2">💡 使用说明：</h4>
+            <ul class="text-sm space-y-1 text-gray-600">
+              <li>• 填写学生的钱包地址作为付款人</li>
+              <li>• 填写大学的钱包地址作为接收方</li>
+              <li>• 设置学费金额（以USDC计算）</li>
+              <li>• 发票编号应该是唯一的标识符</li>
+              <li>• 初始化后，交易状态将为 PENDING，等待学生存款</li>
+            </ul>
           </div>
         </div>
       </div>

@@ -115,68 +115,77 @@
       <span>请先连接您的MetaMask钱包</span>
     </div>
   {:else}
-    <div class="card bg-base-100 shadow-xl">
-      <div class="card-body">
-        <h2 class="card-title">支付信息</h2>
+    <div class="card bg-base-100 shadow-xl border border-base-300">
+      <div class="card-body p-8">
+        <h2 class="card-title text-2xl mb-6 flex items-center">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-2 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
+          支付信息
+        </h2>
         
-        <form onsubmit={(e) => { e.preventDefault(); handleSubmit(); }}>
-          <div class="form-control">
+        <form onsubmit={(e) => { e.preventDefault(); handleSubmit(); }} class="space-y-4">
+          <div class="form-control w-full">
             <label class="label" for="amount">
-              <span class="label-text">学费金额 (USDC)</span>
+              <span class="label-text font-medium">学费金额 (USDC)</span>
+              <span class="label-text-alt text-gray-500">必填</span>
             </label>
             <input 
               id="amount"
               type="number" 
               step="0.000001"
               placeholder="请输入学费金额" 
-              class="input input-bordered" 
+              class="input input-bordered w-full focus:input-primary" 
               bind:value={amount}
               disabled={loading}
               oninput={clearMessages}
             />
           </div>
 
-          <div class="form-control">
+          <div class="form-control w-full">
             <label class="label" for="invoice">
-              <span class="label-text">发票编号</span>
+              <span class="label-text font-medium">发票编号</span>
+              <span class="label-text-alt text-gray-500">必填</span>
             </label>
             <input 
               id="invoice"
               type="text" 
               placeholder="请输入发票编号" 
-              class="input input-bordered" 
+              class="input input-bordered w-full focus:input-primary" 
               bind:value={invoiceRef}
               disabled={loading}
               oninput={clearMessages}
             />
           </div>
 
-          <div class="form-control">
+          <div class="form-control w-full">
             <label class="label" for="university">
-              <span class="label-text">大学钱包地址</span>
+              <span class="label-text font-medium">大学钱包地址</span>
+              <span class="label-text-alt text-gray-500">必填</span>
             </label>
             <input 
               id="university"
               type="text" 
               placeholder="0x..." 
-              class="input input-bordered" 
+              class="input input-bordered w-full focus:input-primary font-mono" 
               bind:value={universityAddress}
               disabled={loading}
               oninput={clearMessages}
             />
             <div class="label">
-              <span class="label-text-alt">请输入大学提供的接收地址</span>
+              <span class="label-text-alt text-gray-500">请输入大学提供的接收地址</span>
             </div>
           </div>
 
-          <div class="form-control mt-6">
+          <div class="form-control w-full mt-8">
             <button 
               type="submit" 
-              class="btn btn-primary" 
+              class="btn btn-primary btn-lg w-full" 
               class:loading={loading}
               disabled={loading || !amount || !invoiceRef || !universityAddress}
             >
               {#if loading}
+                <span class="loading loading-spinner loading-sm"></span>
                 {#if step === 'approve'}
                   授权USDC中...
                 {:else if step === 'deposit'}
@@ -185,6 +194,9 @@
                   处理中...
                 {/if}
               {:else}
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
+                </svg>
                 支付学费
               {/if}
             </button>
@@ -192,15 +204,15 @@
         </form>
 
         {#if loading && step !== 'form'}
-          <div class="alert alert-info mt-4">
-            <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <div>
-              <div class="font-bold">
-                {step === 'approve' ? '正在授权USDC' : '正在提交支付'}
+          <div class="alert alert-info mt-6">
+            <div class="flex items-center">
+              <span class="loading loading-spinner loading-md mr-3"></span>
+              <div>
+                <div class="font-bold text-info-content">
+                  {step === 'approve' ? '正在授权USDC' : '正在提交支付'}
+                </div>
+                <div class="text-sm text-info-content/80">请在MetaMask中确认交易</div>
               </div>
-              <div class="text-xs">请在MetaMask中确认交易</div>
             </div>
           </div>
         {/if}
@@ -226,19 +238,38 @@
     </div>
 
     <div class="mt-8">
-      <div class="bg-base-100 rounded-lg p-6">
-        <h3 class="text-lg font-semibold mb-4">💡 支付流程说明</h3>
-        <div class="steps">
-          <div class="step step-primary">填写信息</div>
-          <div class="step" class:step-primary={step === 'approve' || step === 'deposit'}>授权USDC</div>
-          <div class="step" class:step-primary={step === 'deposit'}>提交支付</div>
-          <div class="step">等待确认</div>
-        </div>
-        <div class="mt-4 text-sm text-gray-600">
-          <p>1. 填写学费金额、发票编号和大学地址</p>
-          <p>2. 授权合约使用您的USDC</p>
-          <p>3. 提交支付交易，资金将被托管</p>
-          <p>4. 管理员确认后，资金将释放给大学</p>
+      <div class="card bg-base-100 shadow-lg border border-base-300">
+        <div class="card-body p-6">
+          <h3 class="text-xl font-semibold mb-6 flex items-center">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2 text-info" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            支付流程说明
+          </h3>
+          <div class="steps steps-vertical lg:steps-horizontal">
+            <div class="step step-primary">填写信息</div>
+            <div class="step" class:step-primary={step === 'approve' || step === 'deposit'}>授权USDC</div>
+            <div class="step" class:step-primary={step === 'deposit'}>提交支付</div>
+            <div class="step">等待确认</div>
+          </div>
+          <div class="mt-6 space-y-2">
+            <div class="flex items-start">
+              <span class="badge badge-primary badge-sm mt-1 mr-3">1</span>
+              <span class="text-sm">填写学费金额、发票编号和大学地址</span>
+            </div>
+            <div class="flex items-start">
+              <span class="badge badge-primary badge-sm mt-1 mr-3">2</span>
+              <span class="text-sm">授权合约使用您的USDC</span>
+            </div>
+            <div class="flex items-start">
+              <span class="badge badge-primary badge-sm mt-1 mr-3">3</span>
+              <span class="text-sm">提交支付交易，资金将被托管</span>
+            </div>
+            <div class="flex items-start">
+              <span class="badge badge-primary badge-sm mt-1 mr-3">4</span>
+              <span class="text-sm">管理员确认后，资金将释放给大学</span>
+            </div>
+          </div>
         </div>
       </div>
     </div>
