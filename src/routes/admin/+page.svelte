@@ -12,7 +12,16 @@
     txHash?: string;
   }
 
-  let escrows = $state<EscrowItem[]>([]);
+  let escrows = $state<EscrowItem[]>([
+    {
+        invoiceRef: 'voice1',
+        payer: '0xD226eb79Bfa519b51DADB9AA9Eab2E4357170B43',
+        university: '0x720aC46FdB6da28FA751bc60AfB8094290c2B4b7',
+        amount: BigInt(1000000), // 1 USDC
+        status: 1, // DEPOSITED
+        txHash: ''
+    }
+  ]);
   let loading = $state(false);
   let error = $state('');
   let success = $state('');

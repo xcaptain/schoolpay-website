@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { isConnected, signer, getEscrowContract, getUSDCContract, parseUSDC, walletAddress } from '$lib/wallet';
+  import { isConnected, signer, getEscrowContract, getUSDCContract, parseUSDC, walletAddress, checkWalletAddress, switchToActiveWallet } from '$lib/wallet';
   import { ethers } from 'ethers';
 
   let amount = $state('');
@@ -32,6 +32,27 @@
     success = '';
 
     try {
+      // 步骤0: 检查钱包地址是否一致
+      const walletCheck = await checkWalletAddress();
+      if (!walletCheck.isValid) {
+        const shouldSwitch = confirm(
+          `检测到钱包地址不一致：\n` +
+          `当前连接地址: ${walletCheck.currentAddress}\n` +
+          `MetaMask活跃地址: ${walletCheck.activeAddress}\n\n` +
+          `是否切换到MetaMask活跃地址？`
+        );
+        
+        if (shouldSwitch) {
+          await switchToActiveWallet();
+          // 重新获取signer，因为地址可能已经改变
+          if (!$signer) {
+            throw new Error('切换钱包后无法获取签名器');
+          }
+        } else {
+          throw new Error('请使用正确的钱包地址进行支付');
+        }
+      }
+
       const amountBigInt = parseUSDC(amount);
       const escrowContract = getEscrowContract($signer);
       const usdcContract = getUSDCContract($signer);
@@ -143,9 +164,9 @@
               disabled={loading}
               oninput={clearMessages}
             />
-            <label class="label">
+            <div class="label">
               <span class="label-text-alt">请输入大学提供的接收地址</span>
-            </label>
+            </div>
           </div>
 
           <div class="form-control mt-6">

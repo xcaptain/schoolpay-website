@@ -15,6 +15,8 @@ declare global {
 			selectedAddress: string | null;
 			chainId: string;
 			isMetaMask?: boolean;
+			on: (event: string, callback: (...args: any[]) => void) => void;
+			removeListener: (event: string, callback: (...args: any[]) => void) => void;
 		};
 	}
 }

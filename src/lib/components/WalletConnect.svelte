@@ -31,6 +31,30 @@
         console.log('自动连接钱包失败:', err);
       }
     }
+
+    // 监听账户变更
+    if (window.ethereum) {
+      window.ethereum.on('accountsChanged', async (accounts: string[]) => {
+        if (accounts.length === 0) {
+          // 用户断开了所有账户
+          disconnectWallet();
+        } else {
+          // 用户切换了账户，重新连接
+          try {
+            await connectWallet();
+          } catch (err) {
+            console.error('账户切换后重连失败:', err);
+            disconnectWallet();
+          }
+        }
+      });
+
+      // 监听网络变更
+      window.ethereum.on('chainChanged', (chainId: string) => {
+        // 网络变更时重新加载页面
+        window.location.reload();
+      });
+    }
   });
 </script>
 
@@ -55,7 +79,7 @@
             <span>{formatAddress($walletAddress)}</span>
           </div>
         </div>
-        <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[1] w-52 p-2 shadow">
+        <ul class="dropdown-content menu bg-base-100 rounded-box z-[1] w-52 p-2 shadow">
           <li><button onclick={handleDisconnect} class="text-error">断开连接</button></li>
         </ul>
       </div>

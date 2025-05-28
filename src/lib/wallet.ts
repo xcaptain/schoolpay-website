@@ -8,8 +8,8 @@ export const provider = writable<ethers.BrowserProvider | null>(null);
 export const signer = writable<ethers.JsonRpcSigner | null>(null);
 
 // 合约地址和ABI (你需要替换为实际部署的合约地址)
-export const CONTRACT_ADDRESS = '0x1234567890123456789012345678901234567890'; // 替换为你的合约地址
-export const USDC_ADDRESS = '0xA0b86a33E6417c18BD0bd6Dc3E73E0C82D906Db7'; // Sepolia测试网的USDC地址
+export const CONTRACT_ADDRESS = '0xf34c42BAAdd70a04cab0B9957b3D410fBfb1277E'; // 替换为你的合约地址
+export const USDC_ADDRESS = '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238'; // Sepolia测试网的USDC地址
 
 // 简化的合约ABI
 export const TUITION_ESCROW_ABI = [
@@ -123,10 +123,59 @@ export function formatAddress(address: string): string {
 
 // 解析金额 (USDC有6位小数)
 export function parseUSDC(amount: string): bigint {
-  return ethers.parseUnits(amount, 6);
+    console.log('Parsing USDC amount:', amount);
+  return ethers.parseUnits('1', 6);
 }
 
 // 格式化金额显示
 export function formatUSDC(amount: bigint): string {
   return ethers.formatUnits(amount, 6);
+}
+
+// 检查当前钱包地址是否与MetaMask活跃地址一致
+export async function checkWalletAddress(): Promise<{ isValid: boolean; currentAddress?: string; activeAddress?: string }> {
+  if (!window.ethereum) {
+    throw new Error('请安装 MetaMask 钱包');
+  }
+
+  try {
+    const browserProvider = new ethers.BrowserProvider(window.ethereum);
+    const currentSigner = await browserProvider.getSigner();
+    const currentAddress = await currentSigner.getAddress();
+    
+    // 获取MetaMask当前活跃地址
+    const accounts = await window.ethereum.request({ method: 'eth_accounts' });
+    const activeAddress = accounts[0];
+
+    const isValid = currentAddress.toLowerCase() === activeAddress?.toLowerCase();
+    
+    return {
+      isValid,
+      currentAddress,
+      activeAddress
+    };
+  } catch (error) {
+    console.error('检查钱包地址失败:', error);
+    throw error;
+  }
+}
+
+// 请求切换到正确的钱包地址
+export async function switchToActiveWallet(): Promise<void> {
+  if (!window.ethereum) {
+    throw new Error('请安装 MetaMask 钱包');
+  }
+
+  try {
+    // 重新请求账户访问权限，这会提示用户选择账户
+    await window.ethereum.request({ 
+      method: 'eth_requestAccounts' 
+    });
+    
+    // 重新连接钱包以更新状态
+    await connectWallet();
+  } catch (error) {
+    console.error('切换钱包失败:', error);
+    throw error;
+  }
 }
